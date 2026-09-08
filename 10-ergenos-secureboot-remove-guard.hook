@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Remove
+Type = Package
+Target = ergenos-secureboot
+
+[Action]
+Description = Checking whether ErgenOS Secure Boot can be removed safely...
+When = PreTransaction
+AbortOnFail
+Exec = /usr/lib/ergenos-secureboot/removal-guard

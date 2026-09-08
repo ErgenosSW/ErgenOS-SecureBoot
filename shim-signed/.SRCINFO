@@ -1,0 +1,18 @@
+pkgbase = shim-signed
+	pkgdesc = Microsoft-signed x86_64 shim and MokManager binaries from Fedora
+	pkgver = 16.1+fedora+7
+	pkgrel = 1
+	url = https://koji.fedoraproject.org/koji/packageinfo?packageID=14502
+	arch = x86_64
+	license = BSD-2-Clause
+	makedepends = binutils
+	makedepends = file
+	makedepends = sbsigntools
+	options = !strip
+	options = !debug
+	source = https://kojipkgs.fedoraproject.org/packages/shim/16.1/7/x86_64/shim-x64-16.1-7.x86_64.rpm
+	source = COPYRIGHT::https://raw.githubusercontent.com/rhboot/shim/16.1/COPYRIGHT
+	sha512sums = 642f7bd66f9d420fed5d5686d968a2065af445b4e7ba3d27a0a4f5852aefadd1835c485968e7bdc7cea5f377095bd3efcc8636837e3059a19cfab1c777e218f0
+	sha512sums = a27e857517d8ce60e211a13e69305e3e25d2da5b3670d6036916fadc82438711e7617fbc73fa733f85628c8b122ff8ee742492ad3492e18326a9441b11d0a919
+
+pkgname = shim-signed

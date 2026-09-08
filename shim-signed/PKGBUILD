@@ -1,0 +1,53 @@
+# Maintainer: ErgenOS Project <https://github.com/ErgenosSW>
+# Based on the AUR shim-signed package maintained by nl6720.
+
+pkgname=shim-signed
+pkgver=16.1+fedora+7
+pkgrel=1
+pkgdesc='Microsoft-signed x86_64 shim and MokManager binaries from Fedora'
+arch=('x86_64')
+url='https://koji.fedoraproject.org/koji/packageinfo?packageID=14502'
+license=('BSD-2-Clause')
+options=('!strip' '!debug')
+makedepends=('binutils' 'file' 'sbsigntools')
+_fedora_version="${pkgver//+fedora+/-}"
+source=(
+  "https://kojipkgs.fedoraproject.org/packages/shim/${pkgver//+fedora+/\/}/x86_64/shim-x64-${_fedora_version}.x86_64.rpm"
+  'COPYRIGHT::https://raw.githubusercontent.com/rhboot/shim/16.1/COPYRIGHT'
+)
+sha512sums=(
+  '642f7bd66f9d420fed5d5686d968a2065af445b4e7ba3d27a0a4f5852aefadd1835c485968e7bdc7cea5f377095bd3efcc8636837e3059a19cfab1c777e218f0'
+  'a27e857517d8ce60e211a13e69305e3e25d2da5b3670d6036916fadc82438711e7617fbc73fa733f85628c8b122ff8ee742492ad3492e18326a9441b11d0a919'
+)
+
+check() {
+  local source_dir="${srcdir}/usr/lib/efi/shim/${_fedora_version}/EFI"
+  local file
+  local signature_info
+
+  for file in \
+    "${source_dir}/fedora/shimx64.efi" \
+    "${source_dir}/fedora/mmx64.efi" \
+    "${source_dir}/BOOT/fbx64.efi"; do
+    test -s "${file}"
+    file "${file}" | grep -Fq 'PE32+ executable for EFI (application), x86-64'
+    objdump -h "${file}" | grep -Fq '.sbat'
+    sbverify --list "${file}" >/dev/null
+  done
+
+  signature_info="$(sbverify --list "${source_dir}/fedora/shimx64.efi" 2>/dev/null)"
+  grep -Fq 'Microsoft Corporation UEFI CA 2011' <<<"${signature_info}"
+  grep -Fq 'Microsoft UEFI CA 2023' <<<"${signature_info}"
+}
+
+package() {
+  local source_dir="${srcdir}/usr/lib/efi/shim/${_fedora_version}/EFI"
+
+  install -Dm644 "${source_dir}/fedora/shimx64.efi" \
+    "${pkgdir}/usr/share/${pkgname}/shimx64.efi"
+  install -Dm644 "${source_dir}/fedora/mmx64.efi" \
+    "${pkgdir}/usr/share/${pkgname}/mmx64.efi"
+  install -Dm644 "${source_dir}/BOOT/fbx64.efi" \
+    "${pkgdir}/usr/share/${pkgname}/fbx64.efi"
+  install -Dm644 COPYRIGHT "${pkgdir}/usr/share/licenses/${pkgname}/COPYRIGHT"
+}

@@ -1,0 +1,9 @@
+post_install() {
+    printf '%s\n' \
+        'Run "sudo ergenos-secureboot enable --dry-run" to check this system.' \
+        'No firmware or boot files are changed when the package is installed.'
+}
+
+post_upgrade() {
+    post_install
+}

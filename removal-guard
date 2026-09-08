@@ -1,0 +1,13 @@
+#!/usr/bin/bash
+
+set -eu
+
+state=/var/lib/ergenos/secureboot/state.json
+
+if [[ -f "${state}" ]] && grep -Eq '"configured"[[:space:]]*:[[:space:]]*true' "${state}"; then
+    printf '%s\n' \
+        'ergenos-secureboot is still active.' \
+        'Disable Secure Boot support safely before removing this package.' >&2
+    exit 1
+fi
+

@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = grub
+Target = shim-signed
+
+[Action]
+Description = Rebuilding and signing the ErgenOS Secure Boot loader...
+When = PostTransaction
+Depends = ergenos-secureboot
+Exec = /usr/bin/ergenos-secureboot refresh-grub

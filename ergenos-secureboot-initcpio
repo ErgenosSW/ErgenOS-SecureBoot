@@ -1,0 +1,14 @@
+#!/usr/bin/bash
+
+set -eu
+
+kernel="$1"
+
+if [[ -n "${KERNELDESTINATION:-}" && -f "${KERNELDESTINATION}" ]]; then
+    kernel="${KERNELDESTINATION}"
+fi
+
+[[ -n "${kernel}" && -f "${kernel}" ]] || exit 0
+
+/usr/bin/ergenos-secureboot sign-kernel "${kernel}"
+
