@@ -10,13 +10,15 @@ for the ErgenOS boot layout, GRUB, `mkinitcpio` and package hooks.
 
 ## Status
 
-The complete lifecycle has been validated in QEMU/KVM with OVMF: MOK
-enrollment, Secure Boot activation, booting through shim, kernel and GRUB
-updates, DKMS signing, protected package removal, MOK deletion, disabling the
-feature and returning to the normal ErgenOS boot entry.
+The complete lifecycle has been validated in QEMU/KVM with OVMF and on a
+physical Lenovo ThinkPad: MOK enrollment, Secure Boot activation, booting
+through shim, kernel and GRUB updates, DKMS signing, protected package
+removal, MOK deletion, disabling the feature and returning to the normal
+ErgenOS boot entry.
 
-Validation on physical hardware is still pending. Treat version 0.1 as a
-technology preview and keep a firmware-accessible recovery path available.
+Version 0.1 remains an experimental release. Firmware implementations differ,
+so keep a firmware-accessible recovery path available.
+The current signed repository package is `ergenos-secureboot` 0.1.0-3.
 
 The first release targets:
 
@@ -29,10 +31,12 @@ The first release targets:
   embedded, SBAT metadata included and an ErgenOS MOK signature;
 - automatic re-signing after kernel, initramfs and GRUB updates.
 
-When DKMS is installed, ErgenOS configures it to sign out-of-tree modules with
-the same enrolled MOK and rebuilds the modules already present on the system.
-This covers drivers such as NVIDIA and `broadcom-wl-dkms` without maintaining a
-second enrollment key.
+When DKMS is installed, ErgenOS configures it to use the same enrolled MOK,
+rebuilds the modules already present on the system and independently signs and
+verifies the installed modules, including compressed `.ko.zst` files. This
+covers drivers such as NVIDIA and `broadcom-wl-dkms` without maintaining a
+second enrollment key. Run `sudo ergenos-secureboot refresh` after installing
+or updating a DKMS driver to force rebuilding and verified re-signing.
 
 It does not change the firmware Platform Key, KEK or `db`, and it does not
 require UEFI Setup Mode.
@@ -48,9 +52,18 @@ UEFI Microsoft trust database
     -> ErgenOS
 ```
 
-## Planned user flow
+## Setup guide
 
-Install the package and run the non-destructive preflight first:
+The complete end-user guide is available at
+[ergenossw.github.io/ErgenOS-Website/secure-boot.html](https://ergenossw.github.io/ErgenOS-Website/secure-boot.html).
+
+Install the current package from the signed ErgenOS repository:
+
+```bash
+sudo pacman -Syu ergenos-secureboot
+```
+
+Run the non-destructive preflight first:
 
 ```bash
 sudo ergenos-secureboot enable --dry-run
@@ -64,14 +77,19 @@ sudo ergenos-secureboot enable
 
 Choose a one-time password when `mokutil` asks for it. Reboot into the
 `ErgenOS Secure Boot` entry, select **Enroll MOK** in MokManager and enter the
-same password. After booting ErgenOS, verify the result:
+same password. Enable Secure Boot in the firmware's standard/default-key mode
+without clearing or replacing its platform keys. Boot the `ErgenOS Secure
+Boot` entry and verify the result:
 
 ```bash
 sudo ergenos-secureboot finalize
-sudo ergenos-secureboot status
+sudo ergenos-secureboot check
+mokutil --sb-state
 ```
 
 Future kernel and GRUB updates are signed automatically by packaged hooks.
+After a DKMS driver change, run `sudo ergenos-secureboot refresh` and then
+`sudo ergenos-secureboot check`.
 
 ## Commands
 
@@ -108,6 +126,24 @@ The 2026-09-08 integration test covered:
 The current ErgenOS ISO itself is not Secure Boot bootable. This tool targets
 an already installed ErgenOS system that was initially installed with Secure
 Boot disabled.
+
+## Validated physical hardware
+
+The 2026-09-08 physical test covered:
+
+- ErgenOS 1.0 on a Lenovo ThinkPad using its existing UEFI key database;
+- MOK enrollment through MokManager followed by firmware Secure Boot
+  activation;
+- booting the dedicated `ErgenOS Secure Boot` entry through shim;
+- signed `linux-zen` and GRUB images;
+- rebuilding, explicitly signing and loading the compressed
+  `broadcom-wl-dkms` module;
+- verification with `mokutil`, `ergenos-secureboot check`, `modinfo` and the
+  kernel journal;
+- no module signature verification failure after reboot.
+
+This confirms one physical configuration, not universal firmware or hardware
+compatibility. Additional hardware reports are welcome.
 
 ## Signed shim
 
