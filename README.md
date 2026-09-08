@@ -1,13 +1,15 @@
 # ErgenOS-SecureBoot
 
-ErgenOS-SecureBoot jest forkiem / projektem pochodnym **garuda-secureboot** z dystrybucji **Garuda Linux**. Kod został zaadaptowany dla **ErgenOS**.
+ErgenOS-SecureBoot is a fork / derivative of **garuda-secureboot** from **Garuda Linux**. The code has been adapted for **ErgenOS**.
 
-## Upstream i historia
+## Upstream and history
 
-Projekt źródłowy: [garuda-secureboot — Garuda Linux](https://gitlab.com/garuda-linux/pkgbuilds/-/tree/main/garuda-secureboot).
+Upstream project: [garuda-secureboot — Garuda Linux](https://gitlab.com/garuda-linux/pkgbuilds/-/tree/main/garuda-secureboot).
 
-Historia tego repozytorium została wyodrębniona z repozytorium upstream za pomocą `git subtree split`, z zachowaniem oryginalnych commitów dotyczących garuda-secureboot i ich autorstwa.
+This repository's history was extracted using `git subtree split`, preserving the original commits related to garuda-secureboot and their authorship.
 
-## Licencja
+## License
 
-Należy zachować zgodność z licencją upstream przy modyfikowaniu i rozpowszechnianiu kodu, w tym zachować wymagane informacje o autorach i licencji. Plik `PKGBUILD` upstream deklaruje licencję `GPL-3.0-or-later`. Adaptacja dla ErgenOS nie zmienia praw autorów oryginalnego projektu ani obowiązków wynikających z licencji upstream.
+Modifications and redistribution must comply with the upstream license, including preservation of required copyright notices and license information. The upstream `PKGBUILD` declares `GPL-3.0-or-later`.
+
+The adaptation for ErgenOS does not change the original authors' rights or the obligations imposed by the upstream license.
