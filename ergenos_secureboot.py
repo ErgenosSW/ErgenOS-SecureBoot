@@ -31,6 +31,7 @@ BACKUP_DIR = DATA_DIR / "backups"
 STATE_FILE = DATA_DIR / "state.json"
 LOCK_FILE = Path("/run/lock/ergenos-secureboot.lock")
 DKMS_CONFIG = Path("/etc/dkms/framework.conf.d/99-ergenos-secureboot.conf")
+MODULES_DIR = Path("/usr/lib/modules")
 MOK_KEY = KEY_DIR / "MOK.key"
 MOK_CRT = KEY_DIR / "MOK.crt"
 MOK_CER = KEY_DIR / "MOK.cer"
@@ -334,6 +335,59 @@ def generate_mok() -> None:
     os.chmod(MOK_CER, 0o644)
 
 
+def parse_dkms_status(output: str) -> list[tuple[str, str, str, str]]:
+    installed: list[tuple[str, str, str, str]] = []
+    for raw_line in output.splitlines():
+        match = re.match(
+            r"^([^/]+)/([^,]+),\s*([^,]+),\s*([^:]+):\s*installed\b",
+            raw_line.strip(),
+        )
+        if match:
+            installed.append(tuple(value.strip() for value in match.groups()))
+    return installed
+
+
+def sign_installed_dkms_modules(kernel: str) -> None:
+    module_directory = MODULES_DIR / kernel / "updates" / "dkms"
+    if not module_directory.is_dir():
+        return
+    sign_tool = MODULES_DIR / kernel / "build" / "scripts" / "sign-file"
+    if not sign_tool.is_file():
+        raise SecureBootError(f"Kernel module signing tool is missing for {kernel}.")
+
+    modules = sorted(
+        path for path in module_directory.rglob("*")
+        if path.is_file() and (
+            path.name.endswith(".ko") or path.name.endswith(".ko.zst")
+        )
+    )
+    for module in modules:
+        unpacked = module.with_name(f".{module.name}.ergenos-secureboot.ko")
+        compressed = module.with_name(f".{module.name}.ergenos-secureboot.zst")
+        try:
+            if module.name.endswith(".ko.zst"):
+                run_checked(["zstd", "-q", "-d", "-f", str(module), "-o", str(unpacked)])
+            else:
+                shutil.copy2(module, unpacked)
+            run_checked([
+                str(sign_tool), "sha256", str(MOK_KEY), str(MOK_CRT), str(unpacked),
+            ], timeout=None)
+            signer = run_checked(["modinfo", "-F", "signer", str(unpacked)]).stdout
+            if "ErgenOS Machine Owner Key" not in signer:
+                raise SecureBootError(f"Signature verification failed for DKMS module {module}.")
+            if module.name.endswith(".ko.zst"):
+                run_checked(["zstd", "-q", "-f", str(unpacked), "-o", str(compressed)])
+                os.chmod(compressed, stat.S_IMODE(module.stat().st_mode))
+                os.replace(compressed, module)
+            else:
+                os.chmod(unpacked, stat.S_IMODE(module.stat().st_mode))
+                os.replace(unpacked, module)
+            print(f"Signed DKMS module {module}")
+        finally:
+            unpacked.unlink(missing_ok=True)
+            compressed.unlink(missing_ok=True)
+
+
 def configure_dkms() -> None:
     DKMS_CONFIG.parent.mkdir(parents=True, exist_ok=True)
     content = (
@@ -348,8 +402,17 @@ def configure_dkms() -> None:
     os.replace(temporary, DKMS_CONFIG)
 
     if shutil.which("dkms") is not None:
-        print("Rebuilding installed DKMS modules with the ErgenOS MOK")
-        run_checked(["dkms", "autoinstall", "--force"], timeout=None)
+        print("Installing missing DKMS modules with the ErgenOS MOK")
+        run_checked(["dkms", "autoinstall"], timeout=None)
+        status = run_checked(["dkms", "status"])
+        for module, version, kernel, architecture in parse_dkms_status(status.stdout):
+            print(f"Reinstalling DKMS module {module}/{version} for {kernel}")
+            run_checked([
+                "dkms", "install", "--force", "-m", module, "-v", version,
+                "-k", kernel, "-a", architecture,
+            ], timeout=None)
+            sign_installed_dkms_modules(kernel)
+        run_checked(["depmod", "-a"])
 
 
 def sign_file(path: Path) -> None:
@@ -555,6 +618,7 @@ def refresh(*, grub_only: bool = False) -> None:
     if grub_only:
         refresh_grub()
     else:
+        configure_dkms()
         refresh_grub()
         sign_all_kernels()
     write_state(configured=True)

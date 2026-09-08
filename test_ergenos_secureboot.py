@@ -102,6 +102,7 @@ class StateTests(unittest.TestCase):
             "unconfigured",
         )
 
+
     def test_enrollment_pending_state(self) -> None:
         self.assertEqual(
             self.status_with(configured=True, enrolled=False, secure_boot="disabled").state,
@@ -126,6 +127,31 @@ class StateTests(unittest.TestCase):
         )
         self.assertEqual(status.state, "degraded")
         self.assertTrue(status.problems)
+
+
+class DkmsTests(unittest.TestCase):
+    def test_parse_installed_dkms_targets(self) -> None:
+        output = """broadcom-wl/6.30.223.271, 7.2.3-zen1-3-zen, x86_64: installed
+nvidia/590.1, 7.2.3-zen1-3-zen, x86_64: built
+nvidia/590.1, 7.2.4-arch1-1, x86_64: installed
+"""
+        self.assertEqual(
+            secureboot.parse_dkms_status(output),
+            [
+                ("broadcom-wl", "6.30.223.271", "7.2.3-zen1-3-zen", "x86_64"),
+                ("nvidia", "590.1", "7.2.4-arch1-1", "x86_64"),
+            ],
+        )
+
+    def test_missing_kernel_sign_tool_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            modules = Path(directory)
+            (modules / "kernel" / "updates" / "dkms").mkdir(parents=True)
+            with patch.object(secureboot, "MODULES_DIR", modules):
+                with self.assertRaisesRegex(
+                    secureboot.SecureBootError, "signing tool is missing"
+                ):
+                    secureboot.sign_installed_dkms_modules("kernel")
 
 
 class FileOperationTests(unittest.TestCase):
