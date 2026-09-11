@@ -16,9 +16,9 @@ through shim, kernel and GRUB updates, DKMS signing, protected package
 removal, MOK deletion, disabling the feature and returning to the normal
 ErgenOS boot entry.
 
-Version 0.1 remains an experimental release. Firmware implementations differ,
+Version 0.2 remains a development release. Firmware implementations differ,
 so keep a firmware-accessible recovery path available.
-The current signed repository package is `ergenos-secureboot` 0.1.0-3.
+The current signed repository package is `ergenos-secureboot` 0.2.0.dev-2.
 
 The first release targets:
 
@@ -57,13 +57,25 @@ UEFI Microsoft trust database
 The complete end-user guide is available at
 [ergenossw.github.io/ErgenOS-Website/secure-boot.html](https://ergenossw.github.io/ErgenOS-Website/secure-boot.html).
 
-Install the current package from the signed ErgenOS repository:
+The recommended setup method is the guided page in ErgenCTL 1.1. Install both
+current packages from the signed ErgenOS repository:
 
 ```bash
-sudo pacman -Syu ergenos-secureboot
+sudo pacman -Syu ergenctl ergenos-secureboot
 ```
 
-Run the non-destructive preflight first:
+Open **ErgenCTL → Secure Boot**, select **Check readiness**, and then select
+**Set up Secure Boot**. Enter a one-time MOK password twice and approve the
+system authentication dialog. ErgenCTL shows the next required step and a
+nine-item checklist instead of requiring the user to interpret command output.
+
+Reboot into the `ErgenOS Secure Boot` entry, select **Enroll MOK** in MokManager
+and enter the same one-time password. Enable Secure Boot in the firmware's
+standard/default-key mode without clearing or replacing its platform keys,
+then boot the `ErgenOS Secure Boot` entry again. Return to **ErgenCTL → Secure
+Boot** and select **Check status**.
+
+The terminal workflow remains available. Run the non-destructive preflight:
 
 ```bash
 sudo ergenos-secureboot enable --dry-run
@@ -75,11 +87,8 @@ Prepare the signed boot chain and request MOK enrollment:
 sudo ergenos-secureboot enable
 ```
 
-Choose a one-time password when `mokutil` asks for it. Reboot into the
-`ErgenOS Secure Boot` entry, select **Enroll MOK** in MokManager and enter the
-same password. Enable Secure Boot in the firmware's standard/default-key mode
-without clearing or replacing its platform keys. Boot the `ErgenOS Secure
-Boot` entry and verify the result:
+Choose a one-time password when `mokutil` asks for it and complete the same
+MokManager and firmware steps described above. Verify the result with:
 
 ```bash
 sudo ergenos-secureboot finalize
@@ -174,7 +183,7 @@ copyright. See `THIRD_PARTY_NOTICES.md` and the license installed by the
 `shim-signed` package.
 
 
-## ErgenCTL GUI integration (0.2.0.dev)
+## ErgenCTL GUI integration
 
 `capabilities` describes GUI protocol 1 without requesting administrator
 privileges. `gui ACTION` is the restricted GUI entry point authenticated by
@@ -197,5 +206,5 @@ firmware activation are rechecked on each status request. Interrupted setup
 is retained as configured so hooks and diagnostics can detect/repair it.
 Unreadable state is an error, and a busy lock fails without waiting forever.
 Disabling support requires confirmed disabled firmware and the normal boot
-entry. Test this development GUI lifecycle in disposable QEMU/OVMF before
-publishing a stable version; older lifecycle validations above cover 0.1.
+entry. The terminal CLI uses the same implementation and remains available for
+automation, diagnostics and recovery.
