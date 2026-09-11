@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import fcntl
 import getpass
 import json
@@ -82,6 +84,10 @@ class SystemStatus:
     unsigned_kernels: tuple[str, ...]
     boot_entry: bool
     problems: tuple[str, ...]
+    schema_version: int = 1
+    booted_through_shim: bool = False
+    removal_requested: bool = False
+    enrollment_requested: bool = False
 
 
 def run(argv: Sequence[str], *, timeout: int | None = 30,
@@ -124,9 +130,13 @@ def require_command(name: str) -> None:
 def load_state() -> dict[str, object]:
     try:
         value = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except FileNotFoundError:
         return {}
-    return value if isinstance(value, dict) else {}
+    except (json.JSONDecodeError, OSError) as error:
+        raise SecureBootError("Cannot read Secure Boot state; repair the state file before continuing.") from error
+    if not isinstance(value, dict):
+        raise SecureBootError("Invalid Secure Boot state file.")
+    return value
 
 
 def write_state(**updates: object) -> None:
@@ -252,7 +262,8 @@ def collect_status() -> SystemStatus:
         tuple(str(path) for path in installed_kernels() if not signed_by_our_mok(path))
         if configured else ()
     )
-    _, _, entries = boot_entries() if uefi else (None, (), [])
+    current, _, entries = boot_entries() if uefi else (None, (), [])
+    booted_through_shim = any(entry.number == current and expected_secure_boot_entry(entry) for entry in entries)
     entry_found = any(expected_secure_boot_entry(entry) for entry in entries)
 
     problems: list[str] = []
@@ -274,7 +285,7 @@ def collect_status() -> SystemStatus:
         state = "degraded"
     elif not enrolled:
         state = "enrollment-pending"
-    elif sb_state == "enabled":
+    elif sb_state == "enabled" and booted_through_shim:
         state = "active"
     else:
         state = "configured"
@@ -284,7 +295,9 @@ def collect_status() -> SystemStatus:
         mok_created=mok_created, mok_enrolled=enrolled, shim_installed=shim,
         grub_installed=grub, grub_signed=grub_signed,
         unsigned_kernels=unsigned, boot_entry=entry_found,
-        problems=tuple(problems),
+        problems=tuple(problems), booted_through_shim=booted_through_shim,
+        removal_requested=bool(state_data.get("removal_requested")) and enrolled,
+        enrollment_requested=bool(state_data.get("enrollment_requested")) and not enrolled,
     )
 
 
@@ -519,39 +532,57 @@ def ensure_boot_entry() -> None:
     ])
 
 
-def request_mok_removal() -> None:
+def validate_mok_password(password: object) -> str:
+    if not isinstance(password, str) or not re.fullmatch(r"[A-Za-z0-9]{8,16}", password):
+        raise SecureBootError("Use 8–16 letters or digits for the one-time MOK password.")
+    return password
+
+
+def mok_request(operation: str, password: str | None) -> CommandResult:
+    command = ["mokutil", operation, str(MOK_CER)]
+    if password is None:
+        return run(command, timeout=None, inherit_stdio=True)
+    validate_mok_password(password)
+    # mokutil read_hidden_line reads stdin even without a TTY. Never expose
+    # its captured output: this is the only subprocess receiving the secret.
+    result = run(command, timeout=60, input_text=password + "\n" + password + "\n")
+    return CommandResult(result.returncode, "", "")
+
+
+def request_mok_removal(password: str | None = None) -> None:
     if not mok_is_enrolled():
         print("The ErgenOS MOK is not enrolled.")
         return
     print("\nChoose a one-time password to authorize removal in MokManager.")
-    result = run(["mokutil", "--delete", str(MOK_CER)], timeout=None, inherit_stdio=True)
+    result = mok_request("--delete", password)
     if result.returncode != 0:
         raise SecureBootError("mokutil did not queue the ErgenOS MOK for removal.")
     write_state(configured=True, removal_requested=True)
     print("Reboot through 'ErgenOS Secure Boot' and confirm key removal in MokManager.")
 
 
-def request_mok_enrollment() -> None:
+def request_mok_enrollment(password: str | None = None) -> None:
     if mok_is_enrolled():
         return
     print("\nChoose a one-time password when mokutil asks for it.")
     print("You will enter the same password in MokManager after reboot.\n")
-    result = run(["mokutil", "--import", str(MOK_CER)], timeout=None, inherit_stdio=True)
+    result = mok_request("--import", password)
     if result.returncode != 0:
         raise SecureBootError("mokutil did not queue the ErgenOS MOK for enrollment.")
 
 
-def enable(*, dry_run: bool) -> None:
+def enable(*, dry_run: bool, password: str | None = None) -> None:
     preflight()
     if dry_run:
         print("Preflight passed. ErgenOS Secure Boot can be configured.")
         return
     generate_mok()
+    write_state(configured=True, enrollment_requested=False, removal_requested=False)
     configure_dkms()
     refresh_grub()
     sign_all_kernels()
     ensure_boot_entry()
-    request_mok_enrollment()
+    request_mok_enrollment(password)
     write_state(configured=True, enrollment_requested=not mok_is_enrolled())
     print("\nSecure Boot files are prepared and the MOK enrollment is queued.")
     print("Reboot into 'ErgenOS Secure Boot' and complete enrollment in MokManager.")
@@ -579,7 +610,7 @@ def disable(*, keep_mok: bool) -> None:
     if not status.configured:
         print("ErgenOS Secure Boot is not configured.")
         return
-    if status.secure_boot == "enabled":
+    if status.secure_boot != "disabled":
         raise SecureBootError(
             "Disable Secure Boot in the firmware and boot the normal ErgenOS entry first."
         )
@@ -590,7 +621,7 @@ def disable(*, keep_mok: bool) -> None:
             "you intentionally want to retain the enrolled key."
         )
 
-    _, order, entries = boot_entries()
+    current, order, entries = boot_entries()
     normal = [
         entry.number for entry in entries
         if entry.label.casefold() == NORMAL_BOOT_LABEL.casefold()
@@ -599,6 +630,8 @@ def disable(*, keep_mok: bool) -> None:
     secure = [entry.number for entry in entries if expected_secure_boot_entry(entry)]
     if not normal:
         raise SecureBootError("The normal ErgenOS UEFI entry is missing; refusing to disable support.")
+    if current not in normal:
+        raise SecureBootError("Boot the normal ErgenOS entry before disabling support.")
     new_order = [normal[0]]
     new_order.extend(number for number in order if number not in {*normal, *secure})
     new_order.extend(number for number in normal[1:] if number not in new_order)
@@ -663,6 +696,9 @@ def print_status(status: SystemStatus, *, as_json: bool) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage Secure Boot on ErgenOS.")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("capabilities", help="Describe the GUI protocol without privileges")
+    gui_parser = subparsers.add_parser("gui", help="Private GUI protocol (JSON stdin/stdout)")
+    gui_parser.add_argument("action", choices=("status", "check", "preflight", "enable", "finalize", "refresh", "remove-mok", "disable"))
     status_parser = subparsers.add_parser("status", help="Show Secure Boot status")
     status_parser.add_argument("--json", action="store_true")
     check_parser = subparsers.add_parser("check", help="Run configuration checks")
@@ -683,12 +719,72 @@ def build_parser() -> argparse.ArgumentParser:
 def locked() -> object:
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     handle = LOCK_FILE.open("w", encoding="utf-8")
-    fcntl.flock(handle, fcntl.LOCK_EX)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        handle.close()
+        raise SecureBootError("Another Secure Boot operation is running. Try again when it finishes.") from error
     return handle
+
+
+def gui_environment_check() -> None:
+    release = Path("/etc/os-release").read_text()
+    if not re.search(r'^ID=["\']?ergenos["\']?$', release, re.MULTILINE):
+        raise SecureBootError("Secure Boot configuration requires installed ErgenOS.")
+    cmdline = Path("/proc/cmdline").read_text()
+    root = run_checked(["findmnt", "-n", "-o", "FSTYPE", "/"]).stdout
+    if Path("/run/archiso").exists() or "archisobasedir=" in cmdline or root == "overlay" or "@snapshots/" in cmdline:
+        raise SecureBootError("Configure Secure Boot from the normal installed system, not live media or a snapshot.")
+
+
+def gui_main(action: str) -> int:
+    password = None
+    try:
+        require_root()
+        if action in {"enable", "remove-mok"}:
+            try:
+                request = json.loads(sys.stdin.readline(1024))
+            except (ValueError, OSError) as error:
+                raise SecureBootError("Invalid GUI password request.") from error
+            if not isinstance(request, dict):
+                raise SecureBootError("Invalid GUI password request.")
+            password = validate_mok_password(request.pop("password", None))
+        with contextlib.redirect_stdout(io.StringIO()):
+            if action not in {"status", "check"}:
+                gui_environment_check()
+            with locked():
+                if action == "preflight":
+                    enable(dry_run=True)
+                elif action == "enable":
+                    enable(dry_run=False, password=password)
+                elif action == "remove-mok":
+                    request_mok_removal(password)
+                elif action == "disable":
+                    disable(keep_mok=False)
+                elif action == "refresh":
+                    refresh()
+                elif action == "finalize":
+                    finalize()
+                status = collect_status()
+        success = not (action in {"check", "refresh", "finalize"} and status.problems)
+        print(json.dumps({"schema_version": 1, "success": success, "action": action,
+                          "status": asdict(status), "message": "Completed" if success else "Configuration needs repair"}))
+        return 0 if success else 1
+    except (SecureBootError, OSError) as error:
+        print(json.dumps({"schema_version": 1, "success": False, "action": action,
+                          "message": str(error)}))
+        return 1
+    finally:
+        password = None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "capabilities":
+        print(json.dumps({"schema_version": 1, "gui_protocol": 1, "password_stdin": True}))
+        return 0
+    if args.command == "gui":
+        return gui_main(args.action)
     try:
         if args.command in {"status", "check"}:
             require_root()

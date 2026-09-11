@@ -172,3 +172,30 @@ GPL-3.0-or-later, matching the license declared by the Garuda upstream package.
 The redistributed shim binaries remain under their upstream BSD license and
 copyright. See `THIRD_PARTY_NOTICES.md` and the license installed by the
 `shim-signed` package.
+
+
+## ErgenCTL GUI integration (0.2.0.dev)
+
+`capabilities` describes GUI protocol 1 without requesting administrator
+privileges. `gui ACTION` is the restricted GUI entry point authenticated by
+the packaged Polkit policy. Actions: status, check, preflight, enable,
+finalize, refresh, remove-mok and disable. Responses have `schema_version`,
+`success`, `action`, `message`, and, when available, a `status` object.
+
+For enable/remove-mok only, the GUI sends one JSON line containing `password`
+on stdin. The backend validates 8–16 ASCII letters/digits and passes the
+password twice to mokutil on its private stdin, never in argv or environment.
+The existing terminal CLI remains available. Captured mokutil output is
+intentionally discarded; error reporting must never echo password input.
+The stdin behavior is supported by upstream mokutil's `read_hidden_line`:
+https://github.com/lcp/mokutil/blob/master/src/util.c .
+
+The status now includes schema version, current shim boot and recorded MOK
+requests. Request flags describe successfully submitted operations, not an
+independent inspection of firmware request queues. Actual enrollment and
+firmware activation are rechecked on each status request. Interrupted setup
+is retained as configured so hooks and diagnostics can detect/repair it.
+Unreadable state is an error, and a busy lock fails without waiting forever.
+Disabling support requires confirmed disabled firmware and the normal boot
+entry. Test this development GUI lifecycle in disposable QEMU/OVMF before
+publishing a stable version; older lifecycle validations above cover 0.1.

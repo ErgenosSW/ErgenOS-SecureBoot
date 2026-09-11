@@ -224,5 +224,56 @@ class FileOperationTests(unittest.TestCase):
             self.assertIn('try_sign_modules="true"', content)
 
 
+class GuiProtocolTests(unittest.TestCase):
+    def test_password_is_stdin_only_and_child_output_is_discarded(self):
+        with patch.object(secureboot, 'run', return_value=secureboot.CommandResult(0, 'Once1234', 'Once1234')) as run:
+            result = secureboot.mok_request('--import', 'Once1234')
+        self.assertNotIn('Once1234', repr(run.call_args.args))
+        self.assertEqual(run.call_args.kwargs['input_text'], 'Once1234\nOnce1234\n')
+        self.assertEqual(result.stdout + result.stderr, '')
+
+    def test_invalid_password_does_not_spawn_mokutil(self):
+        with patch.object(secureboot, 'run') as run:
+            for value in ('bad', 'abcdefgh\n', 'a'*17, 'zażółć123', None):
+                with self.assertRaises(secureboot.SecureBootError):
+                    secureboot.validate_mok_password(value)
+            run.assert_not_called()
+
+    def test_bad_request_never_starts_configuration(self):
+        import io
+        for value in ('bad json', '[]', '{"password":"bad"}'):
+            with (patch.object(secureboot, 'require_root'),
+                  patch.object(secureboot.sys, 'stdin', io.StringIO(value)),
+                  patch.object(secureboot.sys, 'stdout', io.StringIO()) as output,
+                  patch.object(secureboot, 'enable') as enable):
+                self.assertEqual(secureboot.gui_main('enable'), 1)
+                enable.assert_not_called()
+                self.assertNotIn('"password"', output.getvalue())
+
+    def test_partial_enable_preserves_configured_state_before_changes(self):
+        events = []
+        with (patch.object(secureboot, 'preflight'), patch.object(secureboot, 'generate_mok'),
+              patch.object(secureboot, 'write_state', side_effect=lambda **kw: events.append(kw)),
+              patch.object(secureboot, 'configure_dkms', side_effect=secureboot.SecureBootError('DKMS failed'))):
+            with self.assertRaises(secureboot.SecureBootError):
+                secureboot.enable(dry_run=False, password='Once1234')
+        self.assertTrue(events[0]['configured'])
+
+    def test_corrupt_state_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)/'state.json'
+            state.write_text('bad json')
+            with patch.object(secureboot, 'STATE_FILE', state):
+                with self.assertRaises(secureboot.SecureBootError):
+                    secureboot.load_state()
+
+    def test_busy_lock_is_reported_without_waiting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(secureboot, 'LOCK_FILE', Path(directory)/'test.lock'):
+                with secureboot.locked():
+                    with self.assertRaisesRegex(secureboot.SecureBootError, 'Another'):
+                        secureboot.locked()
+
+
 if __name__ == "__main__":
     unittest.main()
