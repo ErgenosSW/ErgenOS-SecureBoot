@@ -2,7 +2,7 @@
 
 pkgname=ergenos-secureboot
 pkgver=0.2.0.dev
-pkgrel=2
+pkgrel=5
 pkgdesc='Shim and Machine Owner Key Secure Boot management for ErgenOS'
 arch=('x86_64')
 url='https://github.com/ErgenosSW/ErgenOS-SecureBoot'
@@ -35,13 +35,13 @@ source=(
   'io.github.ergenossw.ErgenOS.SecureBoot.policy'
 )
 sha256sums=(
-  '8558a7df5981bb8a68d43c1999f02fc476f1c7efb2063b71ed9f0c3ab935f0d2'
+  '168282a87cb472879c1212d5e67dfae2ba5e4b54c0412ad1763892ce62c5ee05'
   'a06dbd5e3bc67d2bd564b3d10700af8592df51dd5267a469b701a3b8dcc3c5ec'
   '25db5f4d52ac43664fab2666cb8815afbbec727e9c852f733dfd1d00502d4a0a'
   'b98191f0355366554fc759cde1a6fb2b123b46c8f4533899baa8f3851d631c35'
   'fd5ce8481264cac9845f9f4af59f460da19e6a3e4b7e5dfb89386dee1ab9bfb1'
   '805584f6acc125b15077df2ed2203994784c2a829891e1074a011769202d68f9'
-  'bc8e6592437ed043c95968fe4e610f0c5638c25fe7bbbfaa63efffead2101c5d'
+  '684778f7752b40b9b1d5e85a968b2e703bf1a30e8065d6aeb2a3fcfcfd925198'
   '478966750f038a31594a871d72cb938180862ea4f306345a39c6a196c8cffe78'
 )
 

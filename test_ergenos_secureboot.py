@@ -155,6 +155,46 @@ nvidia/590.1, 7.2.4-arch1-1, x86_64: installed
 
 
 class FileOperationTests(unittest.TestCase):
+    def test_grub_bootstrap_loads_live_config_from_btrfs_subvolume(self) -> None:
+        def command_result(argv, **_kwargs):
+            if argv[0] == "grub-probe":
+                return secureboot.CommandResult(0, "1111-2222", "")
+            if argv[0] == "grub-mkrelpath":
+                return secureboot.CommandResult(0, "/@/boot/grub", "")
+            self.fail(f"Unexpected command: {argv}")
+
+        with patch.object(secureboot, "run", side_effect=command_result):
+            config = secureboot.grub_bootstrap_config()
+
+        self.assertEqual(
+            config,
+            "loadfont $prefix/fonts/unicode.pf2\n"
+            "if search --no-floppy --fs-uuid --set=ergenos_boot 1111-2222; then\n"
+            "  set prefix=($ergenos_boot)/@/boot/grub\n"
+            "  configfile $prefix/grub.cfg\n"
+            "else\n"
+            "  echo 'ErgenOS boot filesystem was not found.'\n"
+            "fi\n",
+        )
+
+    def test_grub_bootstrap_supports_separate_boot_filesystem(self) -> None:
+        results = [
+            secureboot.CommandResult(0, "ABCD-1234", ""),
+            secureboot.CommandResult(0, "/grub", ""),
+        ]
+        with patch.object(secureboot, "run", side_effect=results):
+            config = secureboot.grub_bootstrap_config()
+        self.assertIn("set prefix=($ergenos_boot)/grub\n", config)
+
+    def test_grub_bootstrap_rejects_unsafe_probe_output(self) -> None:
+        results = [
+            secureboot.CommandResult(0, "1111-2222", ""),
+            secureboot.CommandResult(0, "/@/boot/grub; reboot", ""),
+        ]
+        with patch.object(secureboot, "run", side_effect=results):
+            with self.assertRaisesRegex(secureboot.SecureBootError, "safe GRUB directory"):
+                secureboot.grub_bootstrap_config()
+
     def test_duplicate_secure_boot_entry_is_removed(self) -> None:
         entries = [
             secureboot.BootEntry(2, secureboot.BOOT_LABEL, secureboot.BOOT_LOADER),

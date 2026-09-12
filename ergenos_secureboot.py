@@ -305,8 +305,8 @@ def preflight() -> None:
     if not Path("/sys/firmware/efi").exists():
         raise SecureBootError("ErgenOS was not booted in UEFI mode.")
     for command in (
-        "efibootmgr", "findmnt", "grub-mkstandalone", "mokutil", "openssl",
-        "objdump", "sbsign", "sbverify",
+        "efibootmgr", "findmnt", "grub-mkrelpath", "grub-mkstandalone",
+        "grub-probe", "mokutil", "openssl", "objdump", "sbsign", "sbverify",
     ):
         require_command(command)
     if not EFI_MOUNT.is_mount():
@@ -479,18 +479,56 @@ def atomic_copy(source: Path, destination: Path) -> None:
     os.replace(temporary, destination)
 
 
+def grub_bootstrap_config() -> str:
+    """Load the live GRUB configuration from its real boot filesystem.
+
+    grub-mkstandalone gives its embedded memdisk to ``prefix``.  Embedding the
+    complete grub.cfg would therefore make grub-btrfs look for its dynamic
+    grub-btrfs.cfg inside that memdisk.  Point prefix at the real boot
+    filesystem before loading grub.cfg so snapshot entries stay current.
+    """
+    filesystem_uuid = run_checked([
+        "grub-probe", "--target=fs_uuid", "/boot/grub",
+    ]).stdout.strip()
+    grub_directory = run_checked([
+        "grub-mkrelpath", "/boot/grub",
+    ]).stdout.strip()
+
+    if not re.fullmatch(r"[A-Za-z0-9._:+-]+", filesystem_uuid):
+        raise SecureBootError("Cannot determine a safe GRUB filesystem UUID.")
+    if (
+        not grub_directory.startswith("/")
+        or not re.fullmatch(r"/[A-Za-z0-9._+/@-]+", grub_directory)
+    ):
+        raise SecureBootError("Cannot determine a safe GRUB directory path.")
+
+    return (
+        "loadfont $prefix/fonts/unicode.pf2\n"
+        f"if search --no-floppy --fs-uuid --set=ergenos_boot {filesystem_uuid}; then\n"
+        f"  set prefix=($ergenos_boot){grub_directory}\n"
+        "  configfile $prefix/grub.cfg\n"
+        "else\n"
+        "  echo 'ErgenOS boot filesystem was not found.'\n"
+        "fi\n"
+    )
+
+
 def refresh_grub() -> None:
     preflight()
     backup_efi_files()
     DATA_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = DATA_DIR / f"grubx64-{os.getpid()}.efi"
+    bootstrap = DATA_DIR / f"grub-bootstrap-{os.getpid()}.cfg"
     try:
+        bootstrap.write_text(grub_bootstrap_config(), encoding="utf-8")
+        os.chmod(bootstrap, 0o600)
         run_checked([
             "grub-mkstandalone", "--format=x86_64-efi",
             f"--install-modules={GRUB_MODULES}",
+            f"--modules={GRUB_MODULES}",
             "--sbat", "/usr/share/grub/sbat.csv",
             "--output", str(temporary),
-            "boot/grub/grub.cfg=/boot/grub/grub.cfg",
+            f"boot/grub/grub.cfg={bootstrap}",
         ], timeout=None)
         if not temporary.is_file():
             raise SecureBootError("grub-mkstandalone did not create grubx64.efi.")
@@ -501,6 +539,7 @@ def refresh_grub() -> None:
         atomic_copy(temporary, EFI_VENDOR_DIR / "grubx64.efi")
     finally:
         temporary.unlink(missing_ok=True)
+        bootstrap.unlink(missing_ok=True)
     atomic_copy(SHIM_SOURCE_DIR / "shimx64.efi", EFI_VENDOR_DIR / "shimx64.efi")
     atomic_copy(SHIM_SOURCE_DIR / "mmx64.efi", EFI_VENDOR_DIR / "mmx64.efi")
     atomic_copy(MOK_CER, EFI_VENDOR_DIR / "MOK.cer")

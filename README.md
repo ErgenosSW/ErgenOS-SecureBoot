@@ -18,7 +18,7 @@ ErgenOS boot entry.
 
 Version 0.2 remains a development release. Firmware implementations differ,
 so keep a firmware-accessible recovery path available.
-The current signed repository package is `ergenos-secureboot` 0.2.0.dev-2.
+The current package source is `ergenos-secureboot` 0.2.0.dev-5.
 
 The first release targets:
 
@@ -27,8 +27,10 @@ The first release targets:
 - GRUB installed by the ErgenOS Calamares configuration;
 - an EFI System Partition mounted at `/boot/efi`;
 - `linux-zen` and other kernels installed under `/boot/vmlinuz-*`;
-- a standalone GRUB EFI image with its required modules and configuration
+- a standalone GRUB EFI image with its required modules and a trusted bootstrap
   embedded, SBAT metadata included and an ErgenOS MOK signature;
+- loading the current `/boot/grub/grub.cfg` from its real filesystem, keeping
+  dynamic `grub-btrfs` snapshot entries available under Secure Boot;
 - automatic re-signing after kernel, initramfs and GRUB updates.
 
 When DKMS is installed, ErgenOS configures it to use the same enrolled MOK,
@@ -153,6 +155,13 @@ The 2026-09-08 physical test covered:
 
 This confirms one physical configuration, not universal firmware or hardware
 compatibility. Additional hardware reports are welcome.
+
+The 2026-09-13 clean-install test additionally covered ErgenOS 1.1 on the same
+ThinkPad with a separate `/boot` filesystem. The signed standalone GRUB loaded
+the current on-disk configuration and trusted embedded font, retained the
+dynamic `grub-btrfs` snapshot menu, booted a read-only snapshot with Secure
+Boot enabled and completed an ErgenCTL rollback after the normal system was
+intentionally made unbootable.
 
 ## Signed shim
 
