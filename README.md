@@ -102,6 +102,10 @@ Future kernel and GRUB updates are signed automatically by packaged hooks.
 After a DKMS driver change, run `sudo ergenos-secureboot refresh` and then
 `sudo ergenos-secureboot check`.
 
+The internal `refresh-grub` operation rebuilds and signs GRUB without rebuilding
+unrelated DKMS modules. It also restores the `ErgenOS Secure Boot` firmware entry
+when it is missing, allowing bootloader recovery from ErgenOS Live media.
+
 ## Commands
 
 ```text

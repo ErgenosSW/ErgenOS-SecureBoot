@@ -299,6 +299,19 @@ class GuiProtocolTests(unittest.TestCase):
                 secureboot.enable(dry_run=False, password='Once1234')
         self.assertTrue(events[0]['configured'])
 
+    def test_grub_refresh_restores_secure_boot_entry_without_rebuilding_dkms(self):
+        events = []
+        with (patch.object(secureboot, 'require_root'),
+              patch.object(secureboot, 'load_state', return_value={'configured': True}),
+              patch.object(secureboot, 'preflight'),
+              patch.object(secureboot, 'refresh_grub', side_effect=lambda: events.append('grub')),
+              patch.object(secureboot, 'ensure_boot_entry', side_effect=lambda: events.append('entry')),
+              patch.object(secureboot, 'configure_dkms') as dkms,
+              patch.object(secureboot, 'write_state')):
+            secureboot.refresh(grub_only=True)
+        self.assertEqual(events, ['grub', 'entry'])
+        dkms.assert_not_called()
+
     def test_corrupt_state_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory)/'state.json'

@@ -689,6 +689,7 @@ def refresh(*, grub_only: bool = False) -> None:
     preflight()
     if grub_only:
         refresh_grub()
+        ensure_boot_entry()
     else:
         configure_dkms()
         refresh_grub()
