@@ -18,7 +18,11 @@ ErgenOS boot entry.
 
 Version 0.2 remains a development release. Firmware implementations differ,
 so keep a firmware-accessible recovery path available.
-The current package source is `ergenos-secureboot` 0.2.0.dev-5.
+The current package source is `ergenos-secureboot` **0.2.0.dev-6**.
+Revision 6 restores the ErgenOS Secure Boot firmware entry during GRUB recovery.
+See [CHANGELOG.md](CHANGELOG.md). The backend remains an optional post-install
+component; it is not a newly validated NVIDIA Secure Boot release for the Acer.
+The 1.2 GRUB menu cleanup is maintained in the ErgenOS ISO profile, not here.
 
 The first release targets:
 
