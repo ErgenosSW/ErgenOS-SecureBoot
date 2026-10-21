@@ -1,5 +1,7 @@
 # ErgenOS Secure Boot
 
+[![Tests](https://github.com/ErgenosSW/ErgenOS-SecureBoot/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/ErgenosSW/ErgenOS-SecureBoot/actions/workflows/tests.yml)
+
 Secure Boot configuration for installed ErgenOS systems using a
 Microsoft-signed shim and a locally generated Machine Owner Key (MOK).
 
