@@ -5,8 +5,18 @@ on:
     tags:
       - "v[0-9]*.[0-9]*.[0-9]*-*"
 
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to rebuild
+        required: true
+        type: string
+
 permissions:
   contents: read
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
   tests:
@@ -14,13 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Validate release tag
         shell: bash
         run: |
-          release="${GITHUB_REF_NAME#v}"
+          release="${RELEASE_TAG#v}"
           [[ "$release" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[A-Za-z0-9]+)*-[1-9][0-9]*$ ]]
       - name: Check Python syntax
         run: python -m py_compile ergenos_secureboot.py test_ergenos_secureboot.py
@@ -39,6 +51,22 @@ jobs:
       - name: Install build tools
         run: pacman -Syu --noconfirm git pacman-contrib sudo
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Configure signed ErgenOS repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/ErgenosSW/ErgenOS-Repo/main/keys/ergenos.asc \
+            --output /tmp/ergenos.asc
+          fingerprint=$(gpg --batch --show-keys --with-colons /tmp/ergenos.asc | awk -F: '$1 == "fpr" { print $10; exit }')
+          test "$fingerprint" = 28F9539131BC392DAF4099C595FE7988F432AFDA
+          pacman-key --init
+          pacman-key --add /tmp/ergenos.asc
+          pacman-key --lsign-key "$fingerprint"
+          printf '\n[ergenos]\nSigLevel = Required\nServer = https://ergenossw.github.io/ErgenOS-Repo/$arch\n' >> /etc/pacman.conf
+          pacman -Syu --noconfirm
       - name: Create build user
         run: |
           useradd -m builder
@@ -47,7 +75,7 @@ jobs:
       - name: Apply version from release tag
         shell: bash
         run: |
-          release="${GITHUB_REF_NAME#v}"
+          release="${RELEASE_TAG#v}"
           pkgrel="${release##*-}"
           pkgver="${release%-*}"
           sed -i "s/^pkgver=.*/pkgver=$pkgver/; s/^pkgrel=.*/pkgrel=$pkgrel/" PKGBUILD
@@ -64,6 +92,6 @@ jobs:
           cp "$package" artifacts/
       - uses: actions/upload-artifact@v6
         with:
-          name: ergenos-secureboot-${{ github.ref_name }}-arch-package
+          name: ergenos-secureboot-${{ env.RELEASE_TAG }}-arch-package
           path: artifacts/*.pkg.tar.zst
           if-no-files-found: error
