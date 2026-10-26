@@ -1,4 +1,4 @@
-# Maintainer: ErgenOS Project <https://github.com/ErgenosSW>
+# Maintainer: Szymon Pilip <szymon.pilip@ergenos.dev>
 
 pkgname=ergenos-secureboot
 pkgver=0.2.0.dev
